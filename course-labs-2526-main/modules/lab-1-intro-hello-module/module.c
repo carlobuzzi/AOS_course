@@ -1,0 +1,72 @@
+#include <linux/module.h>
+#include <linux/slab.h> //import for kmalloc
+#include <linux/prandom.h> //provide prandom function to generate integer values
+#include <linux/sched/task.h>
+#include <linux/hrtimer.h>
+
+
+#define TIME_1SEC_NS 1000000000L
+static int num = 5;//parameters that are passed when you introduce modules in the systems in insmod ... num=
+//it is possible modify it and it is specify in module_param
+module_param(num, int, S_IRUGO);
+//provide this information
+MODULE_LICENSE("GPL"); // The license  under which the module is distributed.
+MODULE_AUTHOR("Vittorio Zaccaria"); // The original author of the module (VZ).
+MODULE_DESCRIPTION("HelloWorld Linux Kernel Module."); // The Description of the module.
+
+
+struct list_node{
+    int data;
+    struct list_node *next;
+};
+struct list_node *head;
+struct hrtimer my_timer;
+
+//Add a node at the beginig of the list,
+static void add_node(int data){
+    struct  list_node *new_node = kmalloc(sizeof (*new_node), GFP_KERNEL);
+    new_node->data = data;
+    new_node ->next = head;
+    head = new_node;
+}
+
+enum hrtimer_restart my_timer_handler(struct hrtimer *time){
+    struct list_node *cur = head;
+    unsigned int rnd;
+    //Add a node at the beginig of the list
+    rnd =prandom_u32();
+    add_node(rnd);
+    //Delete the last node when you enter a new one
+    while (cur && cur->next) {//if not null
+        if (!cur->next->next) {//if null
+            kfree(cur->next);
+            cur->next = NULL;
+        } else {
+            cur = cur->next;
+        }
+    }
+    pr_info("It is ok\n");
+    hrtimer_forward_now(time, ns_to_ktime(TIME_1SEC_NS));//moves the timer expiry forward by 1 second
+    return HRTIMER_RESTART; // tells the kernel to call this handler again after the new interval.
+}
+
+static int __init hello_init(void){
+    int i;
+    for (i = 0; i < 3; i++)
+        add_node(i);
+
+    hrtimer_init(&my_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);//initialize the timer
+    my_timer.function = &my_timer_handler;
+    hrtimer_start(&my_timer, ns_to_ktime(3*TIME_1SEC_NS), HRTIMER_MODE_REL);//starts timer to expire in 3 seconds, then call the handler
+    return 0;
+}
+
+// This function defines what happens when this module is removed from the
+// kernel. ie.when you run rmmod command.
+static void __exit hello_cleanup(void) { pr_info("Cleaning up module.\n"); }
+
+module_init(hello_init);    // Registers the __init function for the module.
+module_exit(hello_cleanup); // Registers the __exit function for the module.
+
+//Provide always the init and exit functions
+
